@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NACA Camber Simulation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/9.4.4/math.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+  </head>
+  <body>
+    <div
+      class="header"
+      style="
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        align-items: center;
+        padding: 10px;
+      "
+    >
+      <h2>NACA Camber Simulation</h2>
+      <div
+        class="form"
+        style="display: flex; flex-direction: column; gap: 15px"
+      >
+        <div>
+          <label for="m">NACA Code: </label>
+          <input type="text" id="m" value="7412" />
+        </div>
+        <div>
+          <label for="alpha">Angle of Attack (α): </label>
+          <input type="number" id="alpha" step="0.1" value="0" />
+        </div>
+        <button onclick="plot()">Plot</button>
+      </div>
+    </div>
+
+    <div
+      class="plots"
+      style="
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+        padding: 20px;
+      "
+    >
+      <div id="cl" style="font-weight: 500"></div>
+      <div id="cm" style="font-weight: 500"></div>
+      <div id="plotDiv1"></div>
+      <div id="plotDiv2"></div>
+      <div id="liftCoefficientDiv"></div>
+    </div>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+      crossorigin="anonymous"
+    ></script>
+
+    <script>
+      const mInput = document.getElementById("m");
+      const pInput = document.getElementById("p");
+      const alphaInput = document.getElementById("alpha");
+      const v0Input = document.getElementById("v0");
+      const plotDiv1 = document.getElementById("plotDiv1");
+      const plotDiv2 = document.getElementById("plotDiv2");
+      const plotDiv3 = document.getElementById("plotDiv3");
+      const liftCoefficientDiv = document.getElementById("liftCoefficientDiv");
+      const vectorFieldDiv = document.getElementById("vectorFieldDiv");
+
+      function nacaCamberFunction(x, m, p) {
+        const term1 = (m / (p * p)) * (2 * p * x - x * x);
+        const term2 =
+          (m / ((1 - p) * (1 - p))) * (1 - 2 * p + 2 * p * x - x * x);
+        return x >= 0 && x <= p ? term1 : term2;
+      }
+
+      function calculateSlope(x, m, p) {
+        const dx = 1e-6;
+        const y1 = nacaCamberFunction(x, m, p);
+        const y2 = nacaCamberFunction(x + dx, m, p);
+        return (y2 - y1) / dx;
+      }
+
+      function plotSlopeVsX(m, p) {
+        const xValues = math.range(0, 1, 0.01)._data;
+        const slopes = xValues.map((x) => calculateSlope(x, m, p));
+        const data = [
+          {
+            x: xValues,
+            y: slopes,
+            type: "scatter",
+            mode: "lines",
+            name: "Slope vs x",
+          },
+        ];
+        const layout = {
+          title: "Slope vs x",
+          xaxis: { title: "x" },
+          yaxis: { title: "Slope" },
+        };
+        Plotly.newPlot("plotDiv1", data, layout);
+      }
+
+      function plotNACACamberLine(m, p) {
+        const xValues = math.range(0, 1, 0.01)._data;
+        const yValues = xValues.map((x) => nacaCamberFunction(x, m, p));
+        const data = [
+          {
+            x: xValues,
+            y: yValues,
+            type: "scatter",
+            mode: "lines",
+            name: "NACA Camber Line",
+          },
+        ];
+        const layout = {
+          title: "NACA Camber Line",
+          xaxis: { title: "x" },
+          yaxis: { title: "y" },
+        };
+        Plotly.newPlot("plotDiv2", data, layout);
+      }
+
+      function An(n, m, p, alpha) {
+        let integration = 0;
+        for (let i = 0; i <= Math.PI; i += Math.PI / 100) {
+          const x = (1 - Math.cos(i)) / 2;
+          integration +=
+            calculateSlope(x, m, p) * Math.cos(n * i) * (Math.PI / 100);
+        }
+        if (n === 0) {
+          return alpha - integration / Math.PI;
+        } else {
+          return (2 * integration) / Math.PI;
+        }
+      }
+
+      function LiftCoefficient(alpha, m, p) {
+        alpha = alpha * (Math.PI / 180);
+        return Math.PI * (2 * An(0, m, p, alpha) + An(1, m, p, alpha));
+      }
+
+      function MomentCoefficient(alpha, m, p) {
+        alpha = alpha * (Math.PI / 180);
+        return (
+          (-Math.PI / 2) *
+          (An(0, m, p, alpha) + An(1, m, p, alpha) - An(2, m, p, alpha) / 2)
+        );
+      }
+
+      function gamma(x, alpha, m, p, An) {
+        const theta = Math.acos(1 - 2 * x);
+        let sum = 0;
+        for (let i = 1; i <= 24; i++) {
+          sum += An(i, m, p, alpha) * Math.sin(i * theta);
+        }
+        return (
+          2 *
+          (An(0, m, p, alpha) * ((1 + Math.cos(theta)) / Math.sin(theta)) + sum)
+        );
+      }
+
+      function velocity_x(x, y, u, alpha, m, p, An) {
+        let vx = 0;
+        for (let i = 0.001; i < 1; i += 0.04) {
+          const yi = nacaCamberFunction(i, m, p);
+          const d = Math.sqrt((x - i) ** 2 + (y - yi) ** 2);
+          const dv = (gamma(i, alpha, m, p, An) * 0.01) / (2 * Math.PI * d);
+          vx += (dv * (y - yi)) / d;
+        }
+        return vx + u * Math.cos(alpha);
+      }
+
+      function velocity_y(x, y, u, alpha, m, p, An) {
+        let vy = 0;
+        for (let i = 0.001; i < 1; i += 0.04) {
+          const yi = nacaCamberFunction(i, m, p);
+          const d = Math.sqrt((x - i) ** 2 + (y - yi) ** 2);
+          const dv = (gamma(i, alpha, m, p, An) * 0.01) / (2 * Math.PI * d);
+          vy -= (dv * (x - i)) / d;
+        }
+        return vy + u * Math.sin(alpha);
+      }
+
+      function LiftCoefficientvsAlpha(m, p) {
+        const alphas = Array.from({ length: 26 }, (_, i) => i - 4);
+        const lift_coeffs = [];
+        for (let i = 0; i < alphas.length; i++) {
+          lift_coeffs.push(LiftCoefficient(alphas[i], m, p));
+        }
+
+        const trace = {
+          x: alphas,
+          y: lift_coeffs,
+          mode: "lines",
+          type: "scatter",
+          name: "Lift Coefficient",
+        };
+
+        const data = [trace];
+        const layout = {
+          xaxis: { title: "alpha" },
+          yaxis: { title: "lift coefficient" },
+          title: "Cl vs alpha",
+          showlegend: true,
+          grid: { visible: true },
+        };
+
+        Plotly.newPlot("liftCoefficientDiv", data, layout);
+      }
+
+      function extractNACACode(code) {
+        const m = parseFloat(code[0]) / 100;
+        const p = parseFloat(code[1]) / 10;
+        return { m, p };
+      }
+
+      function plot() {
+        const nacaCode = document.getElementById("m").value;
+        const { m, p } = extractNACACode(nacaCode);
+        console.log(m, p);
+        const alpha = parseFloat(alphaInput.value);
+        const coeff = [-0.2, 0, 0.2, 0];
+        plotSlopeVsX(m, p);
+        plotNACACamberLine(m, p);
+        LiftCoefficientvsAlpha(m, p);
+        const Cl = LiftCoefficient(alpha, m, p);
+        const Cm = MomentCoefficient(alpha, m, p);
+        document.getElementById(
+          "cl"
+        ).innerHTML = `Lift Coefficient at Angle of Attack ${alpha} = ${Cl} `;
+        document.getElementById(
+          "cm"
+        ).innerHTML = `Moment Coefficient at Angle of Attack ${alpha} = ${Cm} `;
+      }
+    </script>
+  </body>
+</html>
